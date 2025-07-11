@@ -1,0 +1,128 @@
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+#include <Wire.h>
+
+TFT_eSPI tft = TFT_eSPI();
+TFT_eSprite pwmSprite = TFT_eSprite(&tft);
+TFT_eSprite percentSprite = TFT_eSprite(&tft);
+
+// Pines para BTS7960
+const int LPWM_PIN = 16;
+const int L_EN_PIN = 17;
+const int pwmChannel = 0;
+
+// Parámetros del sistema
+int pumpDuty = 0;
+int lastPumpDuty = -1;
+const int minDuty = 30;
+const int maxDuty = 220;
+const int dutyStep = 5;
+const int freqPWM = 8000;
+
+// Áreas de actualización
+#define HEADER_H 40
+#define BAR_Y 70
+#define BAR_H 30
+#define VALUE_Y 120
+#define PERCENT_Y 160
+
+void drawStaticUI();
+void controlPump();
+void updateDisplay();
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Inicialización con DMA
+  tft.initDMA();
+  tft.init();
+  tft.setRotation(0);  // Probar 0-3 según orientación
+  tft.fillScreen(TFT_BLACK);
+  tft.setSwapBytes(true);
+  
+  // Configurar sprites
+  pwmSprite.createSprite(100, 40);
+  pwmSprite.setTextColor(TFT_YELLOW, TFT_BLUE);
+  pwmSprite.setTextSize(3);
+  
+  percentSprite.createSprite(80, 30);
+  percentSprite.setTextColor(TFT_CYAN, TFT_BLACK);
+  percentSprite.setTextSize(3);
+  
+  // Configurar driver bomba
+  pinMode(L_EN_PIN, OUTPUT);
+  digitalWrite(L_EN_PIN, HIGH);
+  ledcSetup(pwmChannel, freqPWM, 8);
+  ledcAttachPin(LPWM_PIN, pwmChannel);
+  ledcWrite(pwmChannel, 0);
+  
+  drawStaticUI();
+}
+
+void loop() {
+  controlPump();
+  updateDisplay();
+  delay(50);
+}
+
+void controlPump() {
+  static bool ascending = true;
+  
+  if(ascending) {
+    pumpDuty += dutyStep;
+    if(pumpDuty >= maxDuty) ascending = false;
+  } else {
+    pumpDuty -= dutyStep;
+    if(pumpDuty <= minDuty) ascending = true;
+  }
+  
+  pumpDuty = constrain(pumpDuty, minDuty, maxDuty);
+  ledcWrite(pwmChannel, pumpDuty);
+}
+
+void drawStaticUI() {
+  // Cabecera con alto contraste
+  tft.fillRect(0, 0, 240, HEADER_H, TFT_NAVY);
+  tft.setTextColor(TFT_CYAN, TFT_NAVY);
+  tft.setTextSize(2);
+  tft.setTextDatum(TC_DATUM);
+  tft.drawString("CONTROL DE BOMBA", 120, 12);
+  
+  // Elementos estáticos
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("PWM Value:", 50, BAR_Y - 25);
+  tft.drawString("Duty Cycle:", 50, VALUE_Y - 25);
+  
+  // Marco de barra de progreso
+  tft.drawRect(20, BAR_Y, 200, BAR_H, TFT_BLUE);
+}
+
+void updateDisplay() {
+  if(pumpDuty == lastPumpDuty) return;
+  
+  // 1. Actualizar valor PWM con sprite
+  pwmSprite.fillSprite(TFT_BLUE);
+  pwmSprite.drawNumber(pumpDuty, 0, 0);
+  pwmSprite.pushSprite(140, BAR_Y - 25);
+  
+  // 2. Actualizar porcentaje con sprite
+  int percent = (pumpDuty * 100) / 255;
+  percentSprite.fillSprite(TFT_BLACK);
+  percentSprite.drawNumber(percent, 0, 0);
+  percentSprite.pushSprite(140, VALUE_Y - 25);
+  percentSprite.drawString("%", 55, 0);
+  
+  // 3. Actualizar barra de progreso parcialmente
+  int newWidth = map(pumpDuty, 0, 255, 0, 200);
+  int oldWidth = map(lastPumpDuty, 0, 255, 0, 200);
+  
+  // Solo redibujar la parte cambiada
+  if(newWidth > oldWidth) {
+    tft.fillRect(20 + oldWidth, BAR_Y, newWidth - oldWidth, BAR_H, TFT_BLUE);
+  } else {
+    tft.fillRect(20 + newWidth, BAR_Y, oldWidth - newWidth, BAR_H, TFT_BLACK);
+    tft.drawRect(20, BAR_Y, 200, BAR_H, TFT_BLUE); // Redibujar borde
+  }
+  
+  lastPumpDuty = pumpDuty;
+}
