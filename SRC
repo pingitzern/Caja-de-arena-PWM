@@ -13,7 +13,7 @@ const int pwmChannel = 0;
 
 // Parámetros del sistema
 int pumpDuty = 0;
-int lastPumpDuty = -1;
+int lastPumpDuty = pumpDuty;
 const int minDuty = 30;
 const int maxDuty = 220;
 const int dutyStep = 5;
