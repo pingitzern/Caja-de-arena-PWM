@@ -109,8 +109,8 @@ void updateDisplay() {
   int percent = (pumpDuty * 100) / 255;
   percentSprite.fillSprite(TFT_BLACK);
   percentSprite.drawNumber(percent, 0, 0);
-  percentSprite.pushSprite(140, VALUE_Y - 25);
   percentSprite.drawString("%", 55, 0);
+  percentSprite.pushSprite(140, VALUE_Y - 25);
   
   // 3. Actualizar barra de progreso parcialmente
   int newWidth = map(pumpDuty, 0, 255, 0, 200);
