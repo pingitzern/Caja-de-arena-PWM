@@ -11,13 +11,24 @@ const int LPWM_PIN = 16;
 const int L_EN_PIN = 17;
 const int pwmChannel = 0;
 
+// Botón de incremento
+const int BUTTON_PIN = 32;
+
 // Parámetros del sistema
 int pumpDuty = 0;
-int lastPumpDuty = -1;
-const int minDuty = 30;
 const int maxDuty = 220;
-const int dutyStep = 5;
 const int freqPWM = 8000;
+
+// Control por porcentaje
+int pumpPercent = 0;
+int lastPumpPercent = -1;
+const int percentStep = 10;
+
+// Variables para rebote del botón
+unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 50;
+int lastButtonReading = HIGH;
+int buttonState = HIGH;
 
 // Áreas de actualización
 #define HEADER_H 40
@@ -55,7 +66,12 @@ void setup() {
   ledcSetup(pwmChannel, freqPWM, 8);
   ledcAttachPin(LPWM_PIN, pwmChannel);
   ledcWrite(pwmChannel, 0);
-  
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  pumpPercent = 0;
+  pumpDuty = 0;
+
   drawStaticUI();
 }
 
@@ -66,18 +82,26 @@ void loop() {
 }
 
 void controlPump() {
-  static bool ascending = true;
-  
-  if(ascending) {
-    pumpDuty += dutyStep;
-    if(pumpDuty >= maxDuty) ascending = false;
-  } else {
-    pumpDuty -= dutyStep;
-    if(pumpDuty <= minDuty) ascending = true;
+  int reading = digitalRead(BUTTON_PIN);
+
+  if (reading != lastButtonReading) {
+    lastDebounceTime = millis();
+    lastButtonReading = reading;
   }
-  
-  pumpDuty = constrain(pumpDuty, minDuty, maxDuty);
-  ledcWrite(pwmChannel, pumpDuty);
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading != buttonState) {
+      buttonState = reading;
+
+      if (buttonState == LOW) {
+        pumpPercent += percentStep;
+        if (pumpPercent > 100) pumpPercent = 0;
+
+        pumpDuty = map(pumpPercent, 0, 100, 0, maxDuty);
+        ledcWrite(pwmChannel, pumpDuty);
+      }
+    }
+  }
 }
 
 void drawStaticUI() {
@@ -98,7 +122,7 @@ void drawStaticUI() {
 }
 
 void updateDisplay() {
-  if(pumpDuty == lastPumpDuty) return;
+  if(pumpPercent == lastPumpPercent) return;
   
   // 1. Actualizar valor PWM con sprite
   pwmSprite.fillSprite(TFT_BLUE);
@@ -106,15 +130,15 @@ void updateDisplay() {
   pwmSprite.pushSprite(140, BAR_Y - 25);
   
   // 2. Actualizar porcentaje con sprite
-  int percent = (pumpDuty * 100) / maxDuty;
+  int percent = pumpPercent;
   percentSprite.fillSprite(TFT_BLACK);
   percentSprite.drawNumber(percent, 0, 0);
   percentSprite.drawString("%", 55, 0);
   percentSprite.pushSprite(140, VALUE_Y - 25);
   
   // 3. Actualizar barra de progreso parcialmente
-  int newWidth = map(pumpDuty, 0, maxDuty, 0, 200);
-  int oldWidth = map(lastPumpDuty, 0, maxDuty, 0, 200);
+  int newWidth = map(percent, 0, 100, 0, 200);
+  int oldWidth = map(lastPumpPercent, 0, 100, 0, 200);
   
   // Solo redibujar la parte cambiada
   if(newWidth > oldWidth) {
@@ -124,5 +148,5 @@ void updateDisplay() {
     tft.drawRect(20, BAR_Y, 200, BAR_H, TFT_BLUE); // Redibujar borde
   }
   
-  lastPumpDuty = pumpDuty;
+  lastPumpPercent = pumpPercent;
 }
